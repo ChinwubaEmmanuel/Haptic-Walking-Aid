@@ -40,14 +40,15 @@
 #define TRIG3  (*((volatile uint32_t *)(0x42000000 + (0x400073FC-0x40000000)*32 + 3*4)))
 
 // PortC and PortD masks
-#define ECHO_1 64   //2^4 2^N; PC6; GPI
-#define TRIG_1 128   //PC7; GPO
-#define ECHO_2 1   //PD0
-#define TRIG_2 2  //PD1
-#define ECHO_3 4    //PD2
-#define TRIG_3 8    //PD3
-#define MTR 2   //PF1
+#define ECHO_1 64    // PC6;
+#define TRIG_1 128   // PC7
+#define ECHO_2 1     // PD0
+#define TRIG_2 2     // PD1
+#define ECHO_3 4     // PD2
+#define TRIG_3 8     // PD3
+#define MTR 2        // PF1
 
+// UART Buffer Parse
 #define MAX_CHARS 80
 #define MAX_FIELDS 5
 typedef struct _USER_DATA
@@ -63,9 +64,11 @@ uint32_t frequency = 0;
 uint32_t channel = 0;
 int distance[3];
 uint32_t phase = 0;
+
 //-----------------------------------------------------------------------------
 // Subroutines
 //-----------------------------------------------------------------------------
+
 void enableTimerMode()
 {
 // Configure Timer 1 as the time base
@@ -75,9 +78,7 @@ void enableTimerMode()
    TIMER1_TAILR_R = 10000000;                       // set load value to 40e6 for 1 Hz interrupt rate
    TIMER1_IMR_R = TIMER_IMR_TATOIM;                 // turn-on interrupts
    TIMER1_CTL_R |= TIMER_CTL_TAEN;                  // turn-on timer
-   NVIC_EN0_R = 1 << (INT_TIMER1A-16-0);             // turn-on interrupt 37 (TIMER1A)
-// change load 1000000 and nvic  -0
-    /******/
+// Configure Wide Timer 1 as the time base
     WTIMER1_CTL_R &= ~TIMER_CTL_TAEN;                // turn-off counter before reconfiguring
     WTIMER1_CFG_R = 4;                               // configure as 32-bit counter (A only)
     WTIMER1_TAMR_R = TIMER_TAMR_TACMR | TIMER_TAMR_TAMR_CAP | TIMER_TAMR_TACDIR;
@@ -86,8 +87,7 @@ void enableTimerMode()
     WTIMER1_IMR_R = TIMER_IMR_CAEIM;                 // turn-on interrupts
     WTIMER1_TAV_R = 0;                               // zero counter for first period
     WTIMER1_CTL_R |= TIMER_CTL_TAEN;                 // turn-on counter
-//    NVIC_EN3_R = 1 << (INT_WTIMER1A-16-96);         // turn-on interrupt 112 (WTIMER1A)
-
+// Configure Wide Timer 2 as the time base
     WTIMER2_CTL_R &= ~TIMER_CTL_TAEN;                // turn-off counter before reconfiguring
     WTIMER2_CFG_R = 4;                               // configure as 32-bit counter (A only)
     WTIMER2_TAMR_R = TIMER_TAMR_TACMR | TIMER_TAMR_TAMR_CAP | TIMER_TAMR_TACDIR;
@@ -96,8 +96,7 @@ void enableTimerMode()
     WTIMER2_IMR_R = TIMER_IMR_CAEIM;                 // turn-on interrupts
     WTIMER2_TAV_R = 0;                               // zero counter for first period
     WTIMER2_CTL_R |= TIMER_CTL_TAEN;                 // turn-on counter
-//    NVIC_EN3_R = 1 << (INT_WTIMER2A-16-96);         // turn-on interrupt 112 (WTIMER1A)
-
+// Configure Wide Timer 3 as the time base
     WTIMER3_CTL_R &= ~TIMER_CTL_TAEN;                // turn-off counter before reconfiguring
     WTIMER3_CFG_R = 4;                               // configure as 32-bit counter (A only)
     WTIMER3_TAMR_R = TIMER_TAMR_TACMR | TIMER_TAMR_TAMR_CAP | TIMER_TAMR_TACDIR;
@@ -106,19 +105,19 @@ void enableTimerMode()
     WTIMER3_IMR_R = TIMER_IMR_CAEIM;                 // turn-on interrupts
     WTIMER3_TAV_R = 0;                               // zero counter for first period
     WTIMER3_CTL_R |= TIMER_CTL_TAEN;                 // turn-on counter
-//    NVIC_EN3_R = 1 << (INT_WTIMER3A-16-96);         // turn-on interrupt 112 (WTIMER1A)
-
-    NVIC_EN3_R = 1 << (INT_WTIMER1A-16-96);         // turn-on interrupt 112 (WTIMER1A)
-    NVIC_EN3_R = 1 << (INT_WTIMER2A-16-96);         // turn-on interrupt 112 (WTIMER1A)
-    NVIC_EN3_R = 1 << (INT_WTIMER3A-16-96);         // turn-on interrupt 112 (WTIMER1A)
-
+//  Enable NVIC interrupts
+    NVIC_EN3_R = 1 << (INT_WTIMER1A-16-96);   
+    NVIC_EN3_R = 1 << (INT_WTIMER2A-16-96);    
+    NVIC_EN3_R = 1 << (INT_WTIMER3A-16-96);     
 }
 
+// Timer 1 Interrupt Service Routine
 void timerISR()
 {
+    // State machine to send out pulse from each ultrasonic sensor
     if(phase != 2)
     {
-        distance[channel] = -1;
+        distance[channel] = -1; // Pulse did not returned
     }
     channel++;
     phase = 0;
@@ -131,83 +130,89 @@ void timerISR()
         TRIG1 = 1;
         waitMicrosecond(10);
         TRIG1 = 0;
-        //channel++;
     }
     else if(channel == 1)
     {
         TRIG2 = 1;
         waitMicrosecond(10);
         TRIG2 = 0;
-        //channel++;
     }
     else if(channel == 2)
     {
         TRIG3 = 1;
         waitMicrosecond(10);
         TRIG3 = 0;
-        //channel = 0;
     }
     TIMER1_ICR_R = TIMER_ICR_TATOCINT;
 }
 
+// Wide Timer 1 Interrupt Service Routine
 void wideTimer1Isr()
 {
     if(phase == 0)
     {
-        WTIMER1_TAV_R = 0;                           // zero counter for next edge
+        WTIMER1_TAV_R = 0;    // zero counter for next edge
         phase = 1;
     }
     else if(phase == 1)
     {
-        distance[channel] = WTIMER1_TAV_R;                        // read counter input
-        distance[channel] = (distance[channel] * (345 * 0.000000025 * 1000)) / 2 ;
+        distance[channel] = WTIMER1_TAV_R;    // read counter input
+        distance[channel] = (distance[channel] * (345 * 0.000000025 * 1000)) / 2;    // Convert raw to time (raw/40E6) then calculate distance (d = speed of sound * time)
+                                                                                     // Divide pulse time by 2 (total time = pulse out time taken + pulse received time taken) 
         phase = 2;
     }
-    WTIMER1_ICR_R = TIMER_ICR_CAECINT;           // clear interrupt flag
+    WTIMER1_ICR_R = TIMER_ICR_CAECINT;    // clear interrupt flag
 }
+
+// Wide Timer 2 Interrupt Service Routine
 void wideTimer2Isr()
 {
     if(phase == 0)
     {
-        WTIMER2_TAV_R = 0;                           // zero counter for next edge
+        WTIMER2_TAV_R = 0;    // zero counter for next edge
         phase = 1;
     }
     else if(phase == 1)
     {
-        distance[channel] = WTIMER2_TAV_R;                        // read counter input
-        distance[channel] = (distance[channel] * (345 * 0.000000025 * 1000)) / 2 ;
+        distance[channel] = WTIMER2_TAV_R;    // read counter input
+        distance[channel] = (distance[channel] * (345 * 0.000000025 * 1000)) / 2 ;    // Convert raw to time (raw/40E6) then calculate distance (d = speed of sound * time)
+                                                                                      // Divide pulse time by 2 (total time = pulse out time taken + pulse received time taken)
         phase = 2;
     }
-    WTIMER2_ICR_R = TIMER_ICR_CAECINT;           // clear interrupt flag
+    WTIMER2_ICR_R = TIMER_ICR_CAECINT;    // clear interrupt flag
 }
 
+// Wide Timer 3 Interrupt Service Routine
 void wideTimer3Isr()
 {
     if(phase == 0)
     {
-        WTIMER3_TAV_R = 0;                           // zero counter for next edge
+        WTIMER3_TAV_R = 0; // zero counter for next edge
         phase = 1;
     }
     else if(phase == 1)
     {
-        distance[channel] = WTIMER3_TAV_R;                        // read counter input
-        distance[channel] = (distance[channel] * (345 * 0.000000025 * 1000)) / 2 ;
+        distance[channel] = WTIMER3_TAV_R;    // read counter input
+        distance[channel] = (distance[channel] * (345 * 0.000000025 * 1000)) / 2 ;    // Convert raw to time (raw/40E6) then calculate distance (d = speed of sound * time)
+                                                                                      // Divide pulse time by 2 (total time = pulse out time taken + pulse received time taken)
         phase = 2;
     }
     WTIMER3_ICR_R = TIMER_ICR_CAECINT;           // clear interrupt flag
 }
 
+// Enable Timer1
 void enable1()
 {
     TIMER1_CTL_R &= ~TIMER_CTL_TAEN;
-    //NVIC_EN0_R = 1 << (INT_TIMER1A-16-0);
 }
+
+// Disable Timer1
 void disableTimerMode()
 {
     TIMER1_CTL_R &= ~TIMER_CTL_TAEN;
-    //NVIC_DIS3_R = 1 << (INT_TIMER1A-16-0);
 }
 
+// Stores UART buffer data as string
 void getsUart0(USER_DATA *data)
 {
     int count = 0;
@@ -236,6 +241,7 @@ void getsUart0(USER_DATA *data)
     }
 }
 
+// Parse and Tokenize User Input
 void parseFields(USER_DATA *data)
 {
     char alpha = 'a';
@@ -298,6 +304,7 @@ void parseFields(USER_DATA *data)
     }
 }
 
+// Get data from position in buffer as string
 char* getFieldString(USER_DATA* data, uint8_t fieldNumber)
 {
     if(fieldNumber <= data->fieldCount)
@@ -310,6 +317,7 @@ char* getFieldString(USER_DATA* data, uint8_t fieldNumber)
     }
 }
 
+// Get data from position in buffer as integer
 int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber)
 {
     if((fieldNumber < data->fieldCount) && (data->fieldType[fieldNumber] == 'n'))
@@ -322,11 +330,11 @@ int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber)
     }
 }
 
+// Compare input command with defined command
 bool isCommand(USER_DATA* data, const char strCommand[], uint8_t minArguments)
 {
     int i = 0;
     bool valid = 0;
-    //i = data->fieldPosition[0];
 
     while (data->buffer[i] != '\0')
     {
@@ -344,6 +352,7 @@ bool isCommand(USER_DATA* data, const char strCommand[], uint8_t minArguments)
     return valid;
 }
 
+// String Compare
 int strcmp(const char first[], const char second[])
 {
     int i = 0;
@@ -368,6 +377,7 @@ int strcmp(const char first[], const char second[])
      }
      return valid;
 }
+
 // Initialize Hardware
 void initHw()
 {
@@ -411,7 +421,7 @@ void initmtr()
    SYSCTL_RCGCGPIO_R |= SYSCTL_RCGCGPIO_R5;
    _delay_cycles(3);
 
-   // Configure three LEDs
+   // Configure PWM for motor
    GPIO_PORTF_DEN_R |= MTR;
    GPIO_PORTF_AFSEL_R |= MTR;
    GPIO_PORTF_PCTL_R &= ~(GPIO_PCTL_PF1_M | GPIO_PCTL_PF2_M | GPIO_PCTL_PF3_M);
@@ -445,25 +455,26 @@ void setMTR(uint16_t x)
 {
     PWM1_2_CMPB_R = x;
 }
+
 //-----------------------------------------------------------------------------
 // Main
 //-----------------------------------------------------------------------------
 
 int main(void)
 {
-    waitMicrosecond(500000);
+    // brief wait for hardware to initialize
+    waitMicrosecond(500000); // 0.5s wait
     initHw();
     initEeprom();
     initmtr();
     enableTimerMode();
-
-    //waitMicrosecond(2000000);
-    //setUart0BaudRate(115200, 40e6);
+    
     USER_DATA data;
     initUart0();
 
     putsUart0("\nWelcome!\n");
     putsUart0("Enter Values now: \n");
+
     bool valid = false;
     bool rmw = false;
     bool print_dist = false;
@@ -478,15 +489,10 @@ int main(void)
     uint16_t pwm = 7;
     uint16_t first_ev = 0;
     uint16_t second_ev = 1;
-    //uint16_t empty = 2;
     char str1[40];
 
-    //0,1,2; 4 different events for each sensor and 1 extra for any sensor (wall, person, trip hazard, compound events for stairs)
     // print distance and confirm limit 0- 400(min) 1- 300(min) 2- 560(large)
-    //sensor 0 - event(0, 3, 6, 9, 12, 15) 3000; 2000 ; 1000; 500
-    //sensor 1 - event(1, 4, 7, 10, 13)
-    //sensor 2 - event(2, 5, 8, 11, 14)
-    // write to eeprom
+    // Take out comments to populate eeprom with predeclared event values
     //EVENT 0
 /*
     writeEeprom(0, 0);  writeEeprom(1, 500);  writeEeprom(2, 600);  writeEeprom(3, 1);
@@ -549,16 +555,15 @@ int main(void)
     //EVENT 19 weird obstacle
     writeEeprom(152, 1);  writeEeprom(153, 2);  writeEeprom(154, 0);  writeEeprom(155, 1);
     writeEeprom(156, 3);  writeEeprom(157, 100);  writeEeprom(158, 100);  writeEeprom(159, 85);
-
 */
-
+//  Super loop
     while (true)
     {
         waitMicrosecond(10000);
-        if(kbhitUart0())
+        if(kbhitUart0()) // if user input detected
         {
-            getsUart0(&data);
-            parseFields(&data);
+            getsUart0(&data); // get data
+            parseFields(&data); // parse data
             /*uint8_t i;
             for(i = 0; i < data.fieldCount; i++)
             {
@@ -567,31 +572,37 @@ int main(void)
                 putsUart0(&data.buffer[data.fieldPosition[i]]);
                 putcUart0('\n');
             }*/
+            // Command to reboot microcontroller
             if(isCommand(&data, "reboot", 0))
             {
                 valid = true;
                 NVIC_APINT_R = NVIC_APINT_VECTKEY | NVIC_APINT_SYSRESETREQ;
             }
+            // Command to define event and store in eeprom
             if(isCommand(&data, "event", 4))
             {
                 valid = true;
-                uint16_t event_n = getFieldInteger(&data, 1);
-                uint32_t sensor_n = getFieldInteger(&data, 2);
-                uint32_t min_d = getFieldInteger(&data, 3);
-                uint32_t max_d = getFieldInteger(&data, 4);
+                uint16_t event_n = getFieldInteger(&data, 1); // event number
+                uint32_t sensor_n = getFieldInteger(&data, 2); // sensor number
+                uint32_t min_d = getFieldInteger(&data, 3); // minimum distance to trigger event
+                uint32_t max_d = getFieldInteger(&data, 4); // maximum distance to trigger event
+                // write values to eeprom
                 writeEeprom((8*event_n)+sensor, sensor_n);
                 writeEeprom((8*event_n)+min_dist, min_d);
                 writeEeprom((8*event_n)+max_dist, max_d);
             }
+            // Command to combine two events and store in eeprom
             if(isCommand(&data, "and", 3))
             {
                 valid = true;
-                uint16_t event_n = getFieldInteger(&data, 1);
+                uint16_t event_n = getFieldInteger(&data, 1); // event number
                 uint16_t event1_n = getFieldInteger(&data, 2);
                 uint16_t event2_n = getFieldInteger(&data, 3);
+                // write values to eeprom
                 writeEeprom((8*event_n)+first_ev, event1_n);
                 writeEeprom((8*event_n)+second_ev, event2_n);
             }
+            // Command to erase event in eeprom
             if (isCommand(&data, "erase", 1))
             {
                 valid = true;
@@ -605,6 +616,7 @@ int main(void)
                 writeEeprom((8*event_n)+beat_off_time, 0);
                 writeEeprom((8*event_n)+pwm, 0);
             }
+            // Command to display all events
             if (isCommand(&data, "show events", 0))
             {
                 valid = true;
@@ -685,13 +697,15 @@ int main(void)
                     }
                 }
             }
+            // Command to enable or disable motor vibration for events
             if (isCommand(&data, "haptic", 2))
             {
                 valid = true;
-                uint16_t event_n = getFieldInteger(&data, 1);
-                char* str = getFieldString(&data, 2);
+                uint16_t event_n = getFieldInteger(&data, 1); // event number
+                char* str = getFieldString(&data, 2); // on or off
                 int value = strcmp(&data.buffer[data.fieldPosition[2]], "on");
                 int value1 = strcmp(&data.buffer[data.fieldPosition[2]], "off");
+                // write values to eeprom
                 if(value == 0)
                 {
                     writeEeprom((8*event_n)+haptic, 1);
@@ -705,19 +719,22 @@ int main(void)
                     putsUart0("wrong input\n");
                 }
             }
+            // Command to set vibration pattern for event
             if (isCommand(&data, "pattern", 5))
             {
                 valid = true;
-                uint16_t event_n = getFieldInteger(&data, 1);
-                uint32_t pwm_perc = getFieldInteger(&data, 2);
-                uint32_t beats = getFieldInteger(&data, 3);
-                uint32_t on_time = getFieldInteger(&data, 4);
-                uint32_t off_time = getFieldInteger(&data, 5);
+                uint16_t event_n = getFieldInteger(&data, 1); // event number
+                uint32_t pwm_perc = getFieldInteger(&data, 2); // motor pwm
+                uint32_t beats = getFieldInteger(&data, 3); // how many vibrations
+                uint32_t on_time = getFieldInteger(&data, 4); // vibration time on
+                uint32_t off_time = getFieldInteger(&data, 5); // vibration time off
+                // write values to eeprom
                 writeEeprom((8*event_n)+pwm, pwm_perc);
                 writeEeprom((8*event_n)+beat_count, beats);
                 writeEeprom((8*event_n)+beat_on_time, on_time);
                 writeEeprom((8*event_n)+beat_off_time, off_time);
             }
+            // Command to show patterns for all events
             if (isCommand(&data, "show patterns", 0))
             {
                 if(strcmp(&data.buffer[data.fieldPosition[1]], "patterns") == 0)
@@ -749,18 +766,20 @@ int main(void)
                     }
                 }
             }
+            // Command to show sensor distance measurements
             if (isCommand(&data, "print distance", 0))
             {
                 valid = true;
                 print_dist = true;
             }
-
+            // Command to stop showing distances
             if (isCommand(&data, "stop distance", 0))
             {
                 valid = true;
                 print_dist = false;
             }
-
+            
+            // If command is invalid print error message
             if (!valid)
             {
                 putsUart0("Invalid command\n");
@@ -778,88 +797,80 @@ int main(void)
             putsUart0(str1);
         }
 
-
         uint16_t i;
-        for(i = events_to_run; i; i--) // try i != -1; and (i =n-1; i+1>0; i--)
+        // Check all events against current sensor measurements
+        for(i = events_to_run; i; i--)
         {
+            // check for complex event
             if((i == 19) || (i == 18) || (i == 17) || (i == 16))
             {
-            // what if both events are erased
-            // still play event if both haptics are off?
-            // different beats?
-            // set flag to break
-            // check both sensors; dont always print distance so distance command
                 uint16_t tempev1 = readEeprom((8*i)+first_ev);
                 uint16_t tempev2 = readEeprom((8*i)+second_ev);
-                if((readEeprom((tempev1*8)+sensor) != readEeprom((tempev2*8)+sensor)))
+                if((readEeprom((tempev1*8)+sensor) != readEeprom((tempev2*8)+sensor))) // make sure the same sensor arent used for one event
                 {
-                    if((readEeprom((tempev1*8)+max_dist) != 0) && (readEeprom((tempev2*8)+max_dist) != 0))
+                    if((readEeprom((tempev1*8)+max_dist) != 0) && (readEeprom((tempev2*8)+max_dist) != 0)) // check for distance
                      {
-                        if(readEeprom((8*i)+pwm) != 0)
+                        if(readEeprom((8*i)+pwm) != 0) // if valid pwm
                         {
+                            // if within range of declared event
                           if(((distance[readEeprom((tempev1*8)+sensor)] >= readEeprom((tempev1*8)+min_dist)) && (distance[readEeprom((tempev1*8)+sensor)] <= readEeprom((tempev1*8)+max_dist)))
                           &&((distance[readEeprom((tempev2*8)+sensor)] >= readEeprom((tempev2*8)+min_dist)) && (distance[readEeprom((tempev2*8)+sensor)] <= readEeprom((tempev2*8)+max_dist))))
                           {
+                              // if vibration is enabled
                               if((readEeprom((tempev1*8)+haptic) == 1) && (readEeprom((tempev2*8)+haptic) == 1))
                               {
                                   if(readEeprom((8*i)+haptic) == 1)
                                   {
-                                      //putsUart0("works compound\n");
-
-                                      snprintf(str1, sizeof(str1), "This is Event: %1"PRIu32": \n", i);
+                                      snprintf(str1, sizeof(str1), "This is Event: %1"PRIu32": \n", i); // dispay compound event triggered
                                       putsUart0(str1);
-                                      //waitMicrosecond(1000000);
                                       uint16_t j;
-                                      //disableTimerMode();
+                                      // perform output pattern
                                       for(j = 0; j < readEeprom((i*8)+beat_count); j++)
                                       {
-
                                           setMTR((readEeprom((i*8)+pwm)*1024)/100);
                                           waitMicrosecond(readEeprom((i*8)+beat_on_time) * 1000);
                                           setMTR(0);
                                           waitMicrosecond(readEeprom((i*8)+beat_off_time) * 1000);
-                                          rmw = true;
-
+                                          rmw = true; // flag
                                       }
-                                     // enable1();
                                       waitMicrosecond(1000000);
-                                  }
-                              }
-                          }
+                                    }
+                                }
+                            }
                         }
-                     }
+                    }
                 }
             }
+            // simple event check
             else
             {
+                // valid range
                 if(readEeprom((8*i)+max_dist) != 0)
                 {
                     if((distance[readEeprom((8*i)+sensor)] >= readEeprom((8*i)+min_dist)) && (distance[readEeprom((8*i)+sensor)] <= readEeprom((8*i)+max_dist)))
                     {
+                        // if pattern enabled
                         if(readEeprom((i*8)+haptic) == 1)
                         {
-                            //putsUart0("works\n");
                             snprintf(str1, sizeof(str1), "This is Event: %1"PRIu32": \n", i);
                             putsUart0(str1);
                             //waitMicrosecond(1000000);
                             uint16_t j;
-                            //disableTimerMode();
+                            // play pattern
                             for(j = 0; j < readEeprom((i*8)+beat_count); j++)
                             {
-
                                 setMTR((readEeprom((i*8)+pwm)*1024)/100);
                                 waitMicrosecond(readEeprom((i*8)+beat_on_time)*1000);
                                 setMTR(0);
                                 waitMicrosecond(readEeprom((i*8)+beat_off_time)*1000);
-                                rmw = true;
-
+                                rmw = true; // flag
                             }
-                            //enable1();
                            waitMicrosecond(1000000);
                         }
                     }
                 }
             }
+            // if event detected and performed break out of loop to restart and check for new event
             if(rmw)
             {
                 rmw = false;
@@ -868,20 +879,6 @@ int main(void)
         }
         waitMicrosecond(100000);
     }
-/*
- for loop goes through eeprom table comparing distances of each sensor (for loop decrements from 19 to 0),
- check if event is erased and check if haptic is on or off after event is found not before, if it is just break
- check sensor number and use that number for distance[sensor number] compare to max and min distance
- nested for loop in if statement to play beats (i < beat_count); wait microseconds for time on and off
- compound event uses two events, so separate if statements for 19 - 16
- if any event true play event and break or goto
- do compound events have different beats and haptic? if haptic off do we still play event?
- change show events and pattern for compound
- erase compound events
- shorter times
- garbage values when motot runs
- object detection
- */
     return 0;
 }
 
