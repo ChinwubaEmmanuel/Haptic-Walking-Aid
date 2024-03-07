@@ -48,12 +48,6 @@ extern void _c_int00(void);
 //
 //*****************************************************************************
 extern uint32_t __STACK_TOP;
-extern void wideTimer1Isr(void);
-extern void wideTimer2Isr(void);
-extern void wideTimer3Isr(void);
-extern void timerISR(void);
-extern void BusExpanderISR(void);
-
 
 //*****************************************************************************
 //
@@ -61,6 +55,11 @@ extern void BusExpanderISR(void);
 //
 //*****************************************************************************
 // To be added by user
+extern void wideTimer1Isr(void);
+extern void wideTimer2Isr(void);
+extern void wideTimer3Isr(void);
+extern void timerISR(void);
+extern void BusExpanderISR(void);
 
 //*****************************************************************************
 //
@@ -119,7 +118,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // Analog Comparator 2
     IntDefaultHandler,                      // System Control (PLL, OSC, BO)
     IntDefaultHandler,                      // FLASH Control
-    BusExpanderISR,                      // GPIO Port F
+    BusExpanderISR,                         // GPIO Port F
     IntDefaultHandler,                      // GPIO Port G
     IntDefaultHandler,                      // GPIO Port H
     IntDefaultHandler,                      // UART2 Rx and Tx
